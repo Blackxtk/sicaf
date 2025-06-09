@@ -1,0 +1,267 @@
+<!-- Zebra.html corregido -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Registro de Corte</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#000000" />
+  <link rel="manifest" href="manifest.json" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body {
+      background-color: #f2f2f2;
+      padding-top: 2%;
+    }
+    .caja-dato {
+      background-color: #ffffff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 30px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    .texto {
+      text-align: center;
+      font-size: 48px;
+      font-weight: bold;
+      margin: 0;
+    }
+    .fila-variedad {
+      display: flex;
+      justify-content: space-between;
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    .contenedor-boton {
+      display: flex;
+      justify-content: center;
+      margin-top: 20px;
+    }
+    .contenedor-boton button {
+      width: 200px;
+      font-size: 18px;
+    }
+    .form-label { font-weight: bold; }
+    table { width: 100%; font-size: 14px; }
+    table th, table td { padding: 6px; text-align: center; }
+    .btn-sm { padding: 0.25rem 0.5rem; }
+    .resumen-box {
+      background-color: #ffffff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      max-width: 400px;
+      margin: 0 auto 30px auto;
+    }
+    .resumen-box h5 {
+      margin-bottom: 10px;
+    }
+    .resumen-box ul {
+      padding-left: 20px;
+    }
+    .resumen-box p {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="row">
+      <div class="col-md-12">
+        <div class="caja-dato">
+          <label class="form-label">No. Bloque</label>
+          <p class="texto" id="bloque"></p>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="caja-dato">
+          <form id="form">
+            <h5 class="mb-3">Formulario</h5>
+            <label for="cono" class="form-label">Cono</label>
+            <input type="number" id="cono" class="form-control" required autofocus />
+            <label for="cv" class="form-label mt-3">Cortador y Variedad o Cantidad</label>
+            <input type="text" id="cv" class="form-control" required />
+            <button type="submit" class="btn btn-primary mt-3 w-100">Agregar</button>
+          </form>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="resumen-box" id="resumenVariedades">
+          <h5>Resumen por variedad</h5>
+          <ul id="listaVariedades"></ul>
+          <p id="totalConos"></p>
+        </div>
+      </div>
+      <div class="col-12">
+        <div class="caja-dato">
+          <h5 class="mb-3">Registros del bloque actual</h5>
+          <div class="table-responsive">
+            <table class="table table-bordered" id="tablaRegistros">
+              <thead class="table-light">
+                <tr><th>Cono</th><th>Variedad</th><th>Cortador</th><th>Cantidad</th><th>Acción</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 contenedor-boton">
+        <button type="button" class="btn btn-success" onclick="window.location.href='index.html'">Finalizar bloque</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DB_NAME = "ZebraAppDB";
+    const STORE_NAME = "registros";
+    let db;
+    const bloqueActual = parseInt(localStorage.getItem("bloque"), 10);
+    document.getElementById("bloque").textContent = bloqueActual;
+
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = event => {
+      db = event.target.result;
+      db.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+    };
+    request.onsuccess = event => {
+      db = event.target.result;
+      if (navigator.onLine) syncData();
+      actualizarVista();
+    };
+
+    document.getElementById("form").addEventListener("submit", e => {
+      e.preventDefault();
+      const cono = document.getElementById("cono").value.trim();
+      const cv = document.getElementById("cv").value.trim();
+      if (!cono || !cv) return alert("Todos los campos son obligatorios.");
+
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+
+      req.onsuccess = () => {
+        const registros = req.result;
+        if (registros.some(r => r.cono == cono)) {
+          return alert("El cono ya fue registrado.");
+        }
+
+        let cortador = null;
+        let variedad = null;
+        let cantidad = null;
+
+        if (/^\d{1,2}$/.test(cv)) {
+          cantidad = parseInt(cv);
+          variedad = localStorage.getItem("variedadActual") || "";
+          cortador = localStorage.getItem("cortadorActual") || "";
+        } else if (cv.includes(".")) {
+          const partes = cv.split(".");
+          cortador = partes[0];
+          variedad = partes[1];
+          localStorage.setItem("variedadActual", variedad);
+          localStorage.setItem("cortadorActual", cortador);
+        }
+
+        if (!variedad && cantidad === null) {
+          return alert("Dato de 'cv' inválido.");
+        }
+
+        const nuevoRegistro = {
+          bloque: bloqueActual,
+          cono,
+          variedad,
+          cortador,
+          cantidad,
+          fecha: new Date().toISOString()
+        };
+
+        const txAdd = db.transaction(STORE_NAME, "readwrite");
+        txAdd.objectStore(STORE_NAME).add(nuevoRegistro);
+        txAdd.oncomplete = () => {
+          document.getElementById("form").reset();
+          actualizarVista();
+        };
+      };
+    });
+
+    function actualizarVista() {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+
+      req.onsuccess = () => {
+        const registros = req.result.filter(r => r.bloque === bloqueActual);
+        const variedades = {};
+        const tbody = document.querySelector("#tablaRegistros tbody");
+        tbody.innerHTML = "";
+
+        registros.forEach(r => {
+          if (r.variedad) {
+            variedades[r.variedad] = (variedades[r.variedad] || 0) + 1;
+          }
+
+          const fila = document.createElement("tr");
+          fila.innerHTML = `
+            <td>${r.cono}</td>
+            <td>${r.variedad || ""}</td>
+            <td>${r.cortador || ""}</td>
+            <td>${r.cantidad || ""}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="eliminarRegistro(${r.id})">Eliminar</button></td>
+          `;
+          tbody.appendChild(fila);
+        });
+
+        const lista = document.getElementById("listaVariedades");
+        lista.innerHTML = "";
+        Object.entries(variedades).forEach(([nombre, cantidad]) => {
+          const li = document.createElement("li");
+          li.textContent = `${nombre}: ${cantidad}`;
+          lista.appendChild(li);
+        });
+
+        document.getElementById("totalConos").textContent = `Total conos: ${registros.length}`;
+      };
+    }
+
+    function eliminarRegistro(id) {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      store.delete(id).onsuccess = () => {
+        actualizarVista();
+      };
+    }
+
+    function syncData() {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+
+      req.onsuccess = async () => {
+        const datos = req.result;
+        if (datos.length > 0) {
+          try {
+            const res = await fetch("http://localhost:3000/api/v1/sync", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(datos)
+            });
+            if (res.ok) {
+              const clearTx = db.transaction(STORE_NAME, "readwrite");
+              clearTx.objectStore(STORE_NAME).clear();
+              alert("Datos sincronizados correctamente.");
+              actualizarVista();
+            }
+          } catch (err) {
+            console.error("Error al sincronizar:", err);
+          }
+        }
+      };
+    }
+
+    window.addEventListener("online", () => syncData());
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+  </script>
+</body>
+</html>        
